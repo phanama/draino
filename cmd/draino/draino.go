@@ -72,6 +72,7 @@ func main() {
 		evictStatefulSetPods  = app.Flag("evict-statefulset-pods", "Evict pods that were created by an extant StatefulSet.").Bool()
 		evictLocalStoragePods = app.Flag("evict-emptydir-pods", "Evict pods with local storage, i.e. with emptyDir volumes.").Bool()
 		evictUnreplicatedPods = app.Flag("evict-unreplicated-pods", "Evict pods that were not created by a replication controller.").Bool()
+		disableEviction       = app.Flag("disable-eviction", "Force drain to use delete, even if eviction is supported. This will bypass checking PodDisruptionBudgets, use with caution.").Bool()
 
 		protectedPodAnnotations = app.Flag("protected-pod-annotation", "Protect pods with this annotation from eviction. May be specified multiple times.").PlaceHolder("KEY[=VALUE]").Strings()
 
@@ -163,6 +164,7 @@ func main() {
 			kubernetes.MaxGracePeriod(*maxGracePeriod),
 			kubernetes.EvictionHeadroom(*evictionHeadroom),
 			kubernetes.WithSkipDrain(*skipDrain),
+			kubernetes.WithDisableEviction(*disableEviction),
 			kubernetes.WithPodFilter(kubernetes.NewPodFilters(pf...)),
 			kubernetes.WithAPICordonDrainerLogger(log),
 		),

@@ -478,6 +478,38 @@ func TestDrain(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:    "DisableEvictionOnePod",
+			node:    &core.Node{ObjectMeta: meta.ObjectMeta{Name: nodeName}},
+			options: []APICordonDrainerOption{WithDisableEviction(true)},
+			reactions: []reactor{
+				reactor{
+					verb:     "list",
+					resource: "pods",
+					ret: &core.PodList{Items: []core.Pod{
+						core.Pod{
+							ObjectMeta: meta.ObjectMeta{
+								Name: podName,
+								OwnerReferences: []meta.OwnerReference{meta.OwnerReference{
+									Controller: &isController,
+									Kind:       "Deployment",
+								}},
+							},
+							Spec: core.PodSpec{TerminationGracePeriodSeconds: &podGracePeriodSeconds},
+						},
+					}},
+				},
+				reactor{
+					verb:     "delete",
+					resource: "pods",
+				},
+				reactor{
+					verb:     "get",
+					resource: "pods",
+					err:      apierrors.NewNotFound(schema.GroupResource{Resource: "pods"}, podName),
+				},
+			},
+		},
 	}
 
 	for _, tc := range cases {

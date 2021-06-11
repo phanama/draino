@@ -41,6 +41,7 @@ const (
 
 	ConditionDrainedScheduled = "DrainScheduled"
 	DefaultSkipDrain          = false
+	DefaultDisableEviction    = false
 )
 
 type nodeMutatorFn func(*core.Node)
@@ -111,6 +112,7 @@ type APICordonDrainer struct {
 	maxGracePeriod   time.Duration
 	evictionHeadroom time.Duration
 	skipDrain        bool
+	disableEviction  bool
 }
 
 // SuppliedCondition defines the condition will be watched.
@@ -155,6 +157,13 @@ func WithSkipDrain(b bool) APICordonDrainerOption {
 	}
 }
 
+// WithDisableEviction determines if we are forcing drains to use deletion instead of eviction.
+func WithDisableEviction(b bool) APICordonDrainerOption {
+	return func(d *APICordonDrainer) {
+		d.disableEviction = b
+	}
+}
+
 // WithAPICordonDrainerLogger configures a APICordonDrainer to use the supplied
 // logger.
 func WithAPICordonDrainerLogger(l *zap.Logger) APICordonDrainerOption {
@@ -173,6 +182,7 @@ func NewAPICordonDrainer(c kubernetes.Interface, ao ...APICordonDrainerOption) *
 		maxGracePeriod:   DefaultMaxGracePeriod,
 		evictionHeadroom: DefaultEvictionOverhead,
 		skipDrain:        DefaultSkipDrain,
+		disableEviction:  DefaultDisableEviction,
 	}
 	for _, o := range ao {
 		o(d)
@@ -301,7 +311,7 @@ func (d *APICordonDrainer) Drain(n *core.Node) error {
 	abort := make(chan struct{})
 	errs := make(chan error, 1)
 	for _, pod := range pods {
-		go d.evict(pod, abort, errs)
+		go d.evictOrDelete(pod, abort, errs)
 	}
 	// This will _eventually_ abort evictions. Evictions may spend up to
 	// d.deleteTimeout() in d.awaitDeletion(), or 5 seconds in backoff before
@@ -343,7 +353,7 @@ func (d *APICordonDrainer) getPods(node string) ([]core.Pod, error) {
 	return include, nil
 }
 
-func (d *APICordonDrainer) evict(p core.Pod, abort <-chan struct{}, e chan<- error) {
+func (d *APICordonDrainer) evictOrDelete(p core.Pod, abort <-chan struct{}, e chan<- error) {
 	gracePeriod := int64(d.maxGracePeriod.Seconds())
 	if p.Spec.TerminationGracePeriodSeconds != nil && *p.Spec.TerminationGracePeriodSeconds < gracePeriod {
 		gracePeriod = *p.Spec.TerminationGracePeriodSeconds
@@ -354,10 +364,17 @@ func (d *APICordonDrainer) evict(p core.Pod, abort <-chan struct{}, e chan<- err
 			e <- errors.New("pod eviction aborted")
 			return
 		default:
-			err := d.c.CoreV1().Pods(p.GetNamespace()).Evict(&policy.Eviction{
-				ObjectMeta:    meta.ObjectMeta{Namespace: p.GetNamespace(), Name: p.GetName()},
-				DeleteOptions: &meta.DeleteOptions{GracePeriodSeconds: &gracePeriod},
-			})
+			err := error(nil)
+			if d.disableEviction {
+				err = d.c.CoreV1().Pods(p.GetNamespace()).Delete(p.GetName(), &meta.DeleteOptions{
+					GracePeriodSeconds: &gracePeriod,
+				})
+			} else {
+				err = d.c.CoreV1().Pods(p.GetNamespace()).Evict(&policy.Eviction{
+					ObjectMeta:    meta.ObjectMeta{Namespace: p.GetNamespace(), Name: p.GetName()},
+					DeleteOptions: &meta.DeleteOptions{GracePeriodSeconds: &gracePeriod},
+				})
+			}
 			switch {
 			// The eviction API returns 429 Too Many Requests if a pod
 			// cannot currently be evicted, for example due to a pod
