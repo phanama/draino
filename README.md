@@ -50,6 +50,8 @@ Flags:
       --evict-daemonset-pods     Evict pods that were created by an extant DaemonSet.
       --evict-emptydir-pods      Evict pods with local storage, i.e. with emptyDir volumes.
       --evict-unreplicated-pods  Evict pods that were not created by a replication controller.
+      --disable-eviction         Force drain to use delete, even if eviction is supported. This will bypass checking PodDisruptionBudget.
+      --keep-retry-drain         Keep retry draining after failed drain.
       --protected-pod-annotation=KEY[=VALUE] ...
                                  Protect pods with this annotation from eviction. May be specified multiple times.
 

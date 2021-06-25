@@ -73,6 +73,7 @@ func main() {
 		evictLocalStoragePods = app.Flag("evict-emptydir-pods", "Evict pods with local storage, i.e. with emptyDir volumes.").Bool()
 		evictUnreplicatedPods = app.Flag("evict-unreplicated-pods", "Evict pods that were not created by a replication controller.").Bool()
 		disableEviction       = app.Flag("disable-eviction", "Force drain to use delete, even if eviction is supported. This will bypass checking PodDisruptionBudgets, use with caution.").Bool()
+		keepRetryDrain        = app.Flag("keep-retry-drain", "Keep retry draining after failed drain.").Bool()
 
 		protectedPodAnnotations = app.Flag("protected-pod-annotation", "Protect pods with this annotation from eviction. May be specified multiple times.").PlaceHolder("KEY[=VALUE]").Strings()
 
@@ -171,6 +172,7 @@ func main() {
 		kubernetes.NewEventRecorder(cs),
 		kubernetes.WithLogger(log),
 		kubernetes.WithDrainBuffer(*drainBuffer),
+		kubernetes.WithKeepRetryDrain(*keepRetryDrain),
 		kubernetes.WithConditionsFilter(*conditions))
 
 	if *dryRun {

@@ -33,7 +33,8 @@ import (
 
 const (
 	// DefaultDrainBuffer is the default minimum time between node drains.
-	DefaultDrainBuffer = 10 * time.Minute
+	DefaultDrainBuffer    = 10 * time.Minute
+	DefaultKeepRetryDrain = false
 
 	eventReasonCordonStarting  = "CordonStarting"
 	eventReasonCordonSucceeded = "CordonSucceeded"
@@ -78,6 +79,7 @@ type DrainingResourceEventHandler struct {
 
 	lastDrainScheduledFor time.Time
 	buffer                time.Duration
+	keepRetryDrain        bool
 
 	conditions []SuppliedCondition
 }
@@ -107,6 +109,13 @@ func WithConditionsFilter(conditions []string) DrainingResourceEventHandlerOptio
 	}
 }
 
+// WithKeepRetry determines if we should retry forever
+func WithKeepRetryDrain(b bool) DrainingResourceEventHandlerOption {
+	return func(h *DrainingResourceEventHandler) {
+		h.keepRetryDrain = b
+	}
+}
+
 // NewDrainingResourceEventHandler returns a new DrainingResourceEventHandler.
 func NewDrainingResourceEventHandler(d CordonDrainer, e record.EventRecorder, ho ...DrainingResourceEventHandlerOption) *DrainingResourceEventHandler {
 	h := &DrainingResourceEventHandler{
@@ -115,6 +124,7 @@ func NewDrainingResourceEventHandler(d CordonDrainer, e record.EventRecorder, ho
 		eventRecorder:         e,
 		lastDrainScheduledFor: time.Now(),
 		buffer:                DefaultDrainBuffer,
+		keepRetryDrain:        DefaultKeepRetryDrain,
 	}
 	for _, o := range ho {
 		o(h)
@@ -175,7 +185,7 @@ func (h *DrainingResourceEventHandler) HandleNode(n *core.Node) {
 	}
 
 	// Is there a request to retry a failed drain activity. If yes reschedule drain
-	if failedDrain && HasDrainRetryAnnotation(n) {
+	if failedDrain && (h.keepRetryDrain || HasDrainRetryAnnotation(n)) {
 		h.drainScheduler.DeleteSchedule(n.GetName())
 		h.scheduleDrain(n)
 		return
